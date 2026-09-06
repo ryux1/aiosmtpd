@@ -6,6 +6,7 @@ import hmac
 import logging
 import sqlite3
 import sys
+from contextlib import closing
 from functools import lru_cache
 from hashlib import pbkdf2_hmac
 from pathlib import Path
@@ -23,6 +24,15 @@ DB_AUTH = Path("mail.db~")
 class Authenticator:
     def __init__(self, auth_database):
         self.auth_db = Path(auth_database)
+        with closing(sqlite3.connect(self.auth_db)) as conn:
+            columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(userauth)")
+            }
+        if not {"username", "salt", "hashpass"} <= columns:
+            raise RuntimeError(
+                "incompatible authentication database; recreate it with "
+                "make_user_db.py"
+            )
 
     def __call__(self, server, session, envelope, mechanism, auth_data):
         fail_nothandled = AuthResult(success=False, handled=False)
@@ -35,12 +45,10 @@ class Authenticator:
         except UnicodeDecodeError:
             return fail_nothandled
         password = auth_data.password
-        conn = sqlite3.connect(self.auth_db)
-        curs = conn.execute(
-            "SELECT salt, hashpass FROM userauth WHERE username=?", (username,)
-        )
-        credentials = curs.fetchone()
-        conn.close()
+        with closing(sqlite3.connect(self.auth_db)) as conn:
+            credentials = conn.execute(
+                "SELECT salt, hashpass FROM userauth WHERE username=?", (username,)
+            ).fetchone()
         if not credentials:
             return fail_nothandled
         salt, hash_db = credentials
