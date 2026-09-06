@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
+import hmac
 import logging
-import secrets
 import sqlite3
 import sys
 from functools import lru_cache
@@ -12,7 +12,6 @@ from pathlib import Path
 from smtplib import SMTP as SMTPCLient
 from typing import Dict
 
-import dns.resolver
 from aiosmtpd.controller import Controller
 from aiosmtpd.smtp import AuthResult, LoginPassword
 
@@ -31,24 +30,30 @@ class Authenticator:
             return fail_nothandled
         if not isinstance(auth_data, LoginPassword):
             return fail_nothandled
-        username = auth_data.login
+        try:
+            username = auth_data.login.decode("utf-8")
+        except UnicodeDecodeError:
+            return fail_nothandled
         password = auth_data.password
-        hashpass = pbkdf2_hmac("sha256", password, secrets.token_bytes(), 1000000).hex()
         conn = sqlite3.connect(self.auth_db)
         curs = conn.execute(
-            "SELECT hashpass FROM userauth WHERE username=?", (username,)
+            "SELECT salt, hashpass FROM userauth WHERE username=?", (username,)
         )
-        hash_db = curs.fetchone()
+        credentials = curs.fetchone()
         conn.close()
-        if not hash_db:
+        if not credentials:
             return fail_nothandled
-        if hashpass != hash_db[0]:
+        salt, hash_db = credentials
+        hashpass = pbkdf2_hmac("sha256", password, salt, 1000000).hex()
+        if not hmac.compare_digest(hashpass, hash_db):
             return fail_nothandled
         return AuthResult(success=True)
 
 
 @lru_cache(maxsize=256)
 def get_mx(domain):
+    import dns.resolver
+
     records = dns.resolver.resolve(domain, "MX")
     if not records:
         return None
