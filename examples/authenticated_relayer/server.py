@@ -97,8 +97,8 @@ async def amain():
         port=8025,
         authenticator=Authenticator(DB_AUTH)
     )
-    cont.start()
     try:
+        cont.start()
         await asyncio.Event().wait()
     finally:
         cont.stop()
