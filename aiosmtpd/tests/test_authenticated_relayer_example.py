@@ -1,13 +1,14 @@
 # Copyright 2014-2021 The aiosmtpd Developers
 # SPDX-License-Identifier: Apache-2.0
 
+import asyncio
 import sqlite3
 from contextlib import closing
 
 import pytest
 
+from examples.authenticated_relayer import server as relayer
 from examples.authenticated_relayer.make_user_db import make_user_db
-from examples.authenticated_relayer.server import Authenticator
 
 from aiosmtpd.smtp import LoginPassword
 
@@ -15,7 +16,7 @@ from aiosmtpd.smtp import LoginPassword
 def test_authenticator_uses_stored_salt(tmp_path):
     auth_db = tmp_path / "mail.db"
     make_user_db(auth_db, {"alice": b"correct password"})
-    authenticator = Authenticator(auth_db)
+    authenticator = relayer.Authenticator(auth_db)
 
     accepted = authenticator(
         None, None, None, "PLAIN", LoginPassword(b"alice", b"correct password")
@@ -43,4 +44,38 @@ def test_authenticator_rejects_legacy_database(tmp_path):
         conn.commit()
 
     with pytest.raises(RuntimeError, match="recreate it with make_user_db.py"):
-        Authenticator(auth_db)
+        relayer.Authenticator(auth_db)
+
+
+def test_main_task_keeps_controller_running(tmp_path, monkeypatch):
+    auth_db = tmp_path / "mail.db"
+    make_user_db(auth_db, {"alice": b"correct password"})
+    monkeypatch.setattr(relayer, "DB_AUTH", auth_db)
+    started = False
+    stopped = False
+
+    class DummyController:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            nonlocal started
+            started = True
+
+        def stop(self):
+            nonlocal stopped
+            stopped = True
+
+    monkeypatch.setattr(relayer, "Controller", DummyController)
+
+    async def exercise():
+        task = asyncio.create_task(relayer.amain())
+        await asyncio.sleep(0)
+        assert started
+        assert not task.done()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(exercise())
+    assert stopped
