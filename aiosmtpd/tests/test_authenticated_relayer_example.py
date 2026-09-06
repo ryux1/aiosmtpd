@@ -79,3 +79,28 @@ def test_main_task_keeps_controller_running(tmp_path, monkeypatch):
 
     asyncio.run(exercise())
     assert stopped
+
+
+def test_main_task_cleans_up_controller_when_start_fails(tmp_path, monkeypatch):
+    auth_db = tmp_path / "mail.db"
+    make_user_db(auth_db, {"alice": b"correct password"})
+    monkeypatch.setattr(relayer, "DB_AUTH", auth_db)
+    stopped = False
+
+    class DummyController:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            raise RuntimeError("partial startup failure")
+
+        def stop(self):
+            nonlocal stopped
+            stopped = True
+
+    monkeypatch.setattr(relayer, "Controller", DummyController)
+
+    with pytest.raises(RuntimeError, match="partial startup failure"):
+        asyncio.run(relayer.amain())
+
+    assert stopped
