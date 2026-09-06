@@ -97,8 +97,9 @@ async def amain():
         port=8025,
         authenticator=Authenticator(DB_AUTH)
     )
+    cont.start()
     try:
-        cont.start()
+        await asyncio.Event().wait()
     finally:
         cont.stop()
 
@@ -108,10 +109,7 @@ if __name__ == '__main__':
         print(f"Please create {DB_AUTH} first using make_user_db.py")
         sys.exit(1)
     logging.basicConfig(level=logging.DEBUG)
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.create_task(amain())  # type: ignore[unused-awaitable]
     try:
-        loop.run_forever()
+        asyncio.run(amain())
     except KeyboardInterrupt:
         print("User abort indicated")
