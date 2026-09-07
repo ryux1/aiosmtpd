@@ -4,6 +4,7 @@
 import asyncio
 import sqlite3
 from contextlib import closing
+from pathlib import Path
 
 import pytest
 
@@ -13,7 +14,7 @@ from examples.authenticated_relayer.make_user_db import make_user_db
 from aiosmtpd.smtp import LoginPassword
 
 
-def test_authenticator_uses_stored_salt(tmp_path):
+def test_authenticator_uses_stored_salt(tmp_path: Path) -> None:
     auth_db = tmp_path / "mail.db"
     make_user_db(auth_db, {"alice": b"correct password"})
     authenticator = relayer.Authenticator(auth_db)
@@ -37,7 +38,7 @@ def test_authenticator_uses_stored_salt(tmp_path):
     assert not invalid_username.success
 
 
-def test_authenticator_rejects_legacy_database(tmp_path):
+def test_authenticator_rejects_legacy_database(tmp_path: Path) -> None:
     auth_db = tmp_path / "mail.db"
     with closing(sqlite3.connect(auth_db)) as conn:
         conn.execute("CREATE TABLE userauth (username text, hashpass text)")
@@ -47,7 +48,9 @@ def test_authenticator_rejects_legacy_database(tmp_path):
         relayer.Authenticator(auth_db)
 
 
-def test_main_task_keeps_controller_running(tmp_path, monkeypatch):
+def test_main_task_keeps_controller_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     auth_db = tmp_path / "mail.db"
     make_user_db(auth_db, {"alice": b"correct password"})
     monkeypatch.setattr(relayer, "DB_AUTH", auth_db)
@@ -55,20 +58,20 @@ def test_main_task_keeps_controller_running(tmp_path, monkeypatch):
     stopped = False
 
     class DummyController:
-        def __init__(self, *args, **kwargs):
+        def __init__(self, *args: object, **kwargs: object) -> None:
             pass
 
-        def start(self):
+        def start(self) -> None:
             nonlocal started
             started = True
 
-        def stop(self):
+        def stop(self) -> None:
             nonlocal stopped
             stopped = True
 
     monkeypatch.setattr(relayer, "Controller", DummyController)
 
-    async def exercise():
+    async def exercise() -> None:
         task = asyncio.create_task(relayer.amain())
         await asyncio.sleep(0)
         assert started
@@ -81,20 +84,22 @@ def test_main_task_keeps_controller_running(tmp_path, monkeypatch):
     assert stopped
 
 
-def test_main_task_cleans_up_controller_when_start_fails(tmp_path, monkeypatch):
+def test_main_task_cleans_up_controller_when_start_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     auth_db = tmp_path / "mail.db"
     make_user_db(auth_db, {"alice": b"correct password"})
     monkeypatch.setattr(relayer, "DB_AUTH", auth_db)
     stopped = False
 
     class DummyController:
-        def __init__(self, *args, **kwargs):
+        def __init__(self, *args: object, **kwargs: object) -> None:
             pass
 
-        def start(self):
+        def start(self) -> None:
             raise RuntimeError("partial startup failure")
 
-        def stop(self):
+        def stop(self) -> None:
             nonlocal stopped
             stopped = True
 
